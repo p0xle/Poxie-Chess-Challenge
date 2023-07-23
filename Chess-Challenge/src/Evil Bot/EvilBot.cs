@@ -1,5 +1,8 @@
 ﻿using ChessChallenge.API;
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Numerics;
 
 namespace ChessChallenge.Example
 {
@@ -7,48 +10,149 @@ namespace ChessChallenge.Example
     // Plays randomly otherwise.
     public class EvilBot : IChessBot
     {
-        // Piece values: null, pawn, knight, bishop, rook, queen, king
-        int[] pieceValues = { 0, 100, 300, 300, 500, 900, 10000 };
+        private HashSet<ulong> _repetitions;
 
-        public Move Think(Board board, Timer timer)
+        private const int Inf = 2000000;
+        private const int Mate = 1000000;
+
+        public EvilBot()
         {
-            Move[] allMoves = board.GetLegalMoves();
+            _repetitions = new HashSet<ulong>();
+        }
 
-            // Pick a random move to play if nothing better is found
-            Random rng = new();
-            Move moveToPlay = allMoves[rng.Next(allMoves.Length)];
-            int highestValueCapture = 0;
+        int[] pieceValues = { 0, 100, 300, 300, 500, 900, 0 };
 
-            foreach (Move move in allMoves)
+        private int Evaluate(Board board)
+        {
+            int score = 0;
+            for (var color = 0; color < 2; color++)
             {
-                // Always play checkmate in one
-                if (MoveIsCheckmate(board, move))
+                var isWhite = color == 0;
+                for (var piece = PieceType.Pawn; piece <= PieceType.King; piece++)
                 {
-                    moveToPlay = move;
-                    break;
+                    var pieceIndex = (int)piece;
+                    var bitboard = board.GetPieceBitboard(piece, isWhite);
+
+                    while (bitboard != 0)
+                    {
+                        var sq = BitOperations.TrailingZeroCount(bitboard);
+                        bitboard &= bitboard - 1;
+
+                        // Material
+                        score += pieceValues[pieceIndex];
+
+                        // Centrality
+                        var rank = sq >> 3;
+                        var file = sq & 7;
+                        var centrality = -Math.Abs(7 - rank - file) - Math.Abs(rank - file);
+                        score += centrality * (6 - pieceIndex);
+                    }
                 }
 
-                // Find highest value capture
-                Piece capturedPiece = board.GetPiece(move.TargetSquare);
-                int capturedPieceValue = pieceValues[(int)capturedPiece.PieceType];
+                score = -score;
+            }
 
-                if (capturedPieceValue > highestValueCapture)
+            if (!board.IsWhiteToMove)
+            {
+                score = -score;
+            }
+
+            return score;
+        }
+
+        private int Search(Board board, Timer timer, int totalTime, int ply, int depth, int alpha, int beta, HashSet<ulong> repetitions, out Move bestMove)
+        {
+            bestMove = Move.NullMove;
+
+            if (ply > 0 && repetitions.Contains(board.ZobristKey))
+            {
+                return 0;
+            }
+
+            if (depth == 0)
+            {
+                var score = Evaluate(board);
+                return score;
+            }
+
+            var moves = board.GetLegalMoves();
+            moves = moves.OrderBy(move => !move.IsCapture).ToArray();
+            var bestScore = -Inf;
+            var movesEvaluated = 0;
+
+            // Loop over each legal move
+            foreach (var move in moves)
+            {
+                // If we are out of time, stop searching
+                if (depth > 2 && timer.MillisecondsElapsedThisTurn * 30 > totalTime)
                 {
-                    moveToPlay = move;
-                    highestValueCapture = capturedPieceValue;
+                    return bestScore;
+                }
+
+                board.MakeMove(move);
+                var score = -Search(board, timer, totalTime, ply + 1, depth - 1, -beta, -alpha, repetitions, out _);
+                board.UndoMove(move);
+
+                // Count the number of moves we have evaluated for detecting mates and stalemates
+                movesEvaluated++;
+
+                // If the move is better than our current best, update our best move
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestMove = move;
+                    if (score > alpha)
+                    {
+                        alpha = score;
+                        if (score >= beta)
+                        {
+                            break;
+                        }
+                    }
                 }
             }
 
-            return moveToPlay;
+            if (movesEvaluated == 0)
+            {
+                if (board.IsInCheck())
+                {
+                    // Checkmate
+                    return -Mate;
+                }
+                else
+                {
+                    // Stalemate
+                    return 0;
+                }
+            }
+
+            return bestScore;
         }
 
-        // Test if this move gives checkmate
-        bool MoveIsCheckmate(Board board, Move move)
+        public Move Think(Board board, Timer timer)
         {
-            board.MakeMove(move);
-            bool isMate = board.IsInCheckmate();
-            board.UndoMove(move);
-            return isMate;
+            var totalTime = timer.MillisecondsRemaining;
+
+            _repetitions.Add(board.ZobristKey);
+            var repetitionsCopy = _repetitions.ToHashSet();
+
+            var bestMove = Move.NullMove;
+            // Iterative deepening
+            for (var depth = 1; depth < 128; depth++)
+            {
+                var score = Search(board, timer, totalTime, 0, depth, -Inf, Inf, repetitionsCopy, out var move);
+
+                // If we are out of time, we cannot trust the move that was found during this iteration
+                if (timer.MillisecondsElapsedThisTurn * 30 > totalTime)
+                {
+                    break;
+                }
+
+                bestMove = move;
+                Console.WriteLine($"{score} {move}");
+            }
+
+            return bestMove;
         }
     }
 }
