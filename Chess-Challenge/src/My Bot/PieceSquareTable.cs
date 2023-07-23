@@ -4,7 +4,7 @@ public class PieceSquareTable
 {
     // Todo: remove static when moving into MyBot (static = 1 Token)
 
-    public static int Read(Board board, int[] table, Square square, bool isWhite)
+    public static int Read(int[] table, Square square, bool isWhite)
     {
         int index = square.Index;
 
@@ -20,7 +20,7 @@ public class PieceSquareTable
     }
 
     // 76 Tokens
-    private static readonly int[] pawnsSquareTable =
+    public static readonly int[] pawnsSquareTable =
     {
          0,  0,  0,  0,  0,  0,  0,  0,
         50, 50, 50, 50, 50, 50, 50, 50,
@@ -33,7 +33,7 @@ public class PieceSquareTable
     };
 
     // 102 Tokens
-    private static readonly int[] knightsSquareTable =
+    public static readonly int[] knightsSquareTable =
     {
         -50,-40,-30,-30,-30,-30,-40,-50,
         -40,-20,  0,  0,  0,  0,-20,-40,
@@ -46,7 +46,7 @@ public class PieceSquareTable
     };
 
     // 98 Tokens
-    private static readonly int[] bishopsSquareTable =
+    public static readonly int[] bishopsSquareTable =
     {
         -20,-10,-10,-10,-10,-10,-10,-20,    // avoid corners
         -10,  0,  0,  0,  0,  0,  0,-10,    // avoid borders
@@ -60,7 +60,7 @@ public class PieceSquareTable
 
     // most likely to remove due to very small impact / numbers to stay inside the rules boundaries
     // 80 Tokens
-    private static readonly int[] rooksSquareTable =
+    public static readonly int[] rooksSquareTable =
     {
          0,  0,  0,  0,  0,  0,  0,  0,
          5, 10, 10, 10, 10, 10, 10,  5,     // centralize and occupy the 7th rank
@@ -74,7 +74,7 @@ public class PieceSquareTable
 
     // 97 Tokens
     // potentially remove as well
-    private static readonly int[] queenSquareTable =
+    public static readonly int[] queenSquareTable =
     {
         -20,-10,-10, -5, -5,-10,-10,-20,
         -10,  0,  0,  0,  0,  0,  0,-10,
@@ -87,7 +87,7 @@ public class PieceSquareTable
     };
 
     // 118 Tokens
-    private readonly int[] kingMidGameSquareTable =
+    public static readonly int[] kingMidGameSquareTable =
     {
         -30,-40,-40,-50,-50,-40,-40,-30,
         -30,-40,-40,-50,-50,-40,-40,-30,
@@ -101,7 +101,7 @@ public class PieceSquareTable
 
     // 112 Tokens
     // probably the most important ones
-    private static readonly int[] kingEndGameSquareTable =
+    public static readonly int[] kingEndGameSquareTable =
     {
         -50,-40,-30,-20,-20,-30,-40,-50,
         -30,-20,-10,  0,  0,-10,-20,-30,
