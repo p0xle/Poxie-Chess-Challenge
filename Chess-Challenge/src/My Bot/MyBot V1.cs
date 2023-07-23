@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 
-public class MyBot : IChessBot
+public class MyBotV1 : IChessBot
 {
     #region variables
     private const int _negativeInfinity = -10000000;
