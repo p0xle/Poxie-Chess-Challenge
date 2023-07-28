@@ -10,149 +10,148 @@ namespace ChessChallenge.Example
     // Plays randomly otherwise.
     public class EvilBot : IChessBot
     {
-        private HashSet<ulong> _repetitions;
-
-        private const int Inf = 2000000;
-        private const int Mate = 1000000;
-
-        public EvilBot()
+        private int getGamePhase(Board board)
         {
-            _repetitions = new HashSet<ulong>();
+            // 0 = opening, 1 = middlegame, 2 = endgame
+            if (board.PlyCount < 16) return 0;
+            else if (board.PlyCount < 60) return 1;
+            else return 2;
         }
 
-        int[] pieceValues = { 0, 100, 300, 300, 500, 900, 0 };
-
-        private int Evaluate(Board board)
+        private double scoreKing(Board board, Piece king)
         {
-            int score = 0;
-            for (var color = 0; color < 2; color++)
+
+            double score = 0.0;
+            int goodRank = king.IsWhite ? 0 : 7;
+            if (getGamePhase(board) < 3)
             {
-                var isWhite = color == 0;
-                for (var piece = PieceType.Pawn; piece <= PieceType.King; piece++)
+                score += Math.Abs(king.Square.Rank - goodRank) == 0 ? 0.1 : -0.5;
+            }
+            return score;
+
+        }
+
+        private double scoreQueen(Board board, Piece queen)
+        {
+            return 9.0 + ((1.0 / 64.0) * BitboardHelper.GetNumberOfSetBits(
+                BitboardHelper.GetSliderAttacks(PieceType.Queen, queen.Square, board)
+            ));
+        }
+
+        private double scoreRook(Board board, Piece rook)
+        {
+            return 5.0 + ((1.0 / 64.0) * BitboardHelper.GetNumberOfSetBits(
+                BitboardHelper.GetSliderAttacks(PieceType.Rook, rook.Square, board)
+            ));
+        }
+
+        private double scoreBishop(Board board, Piece bishop)
+        {
+            return 3.0 + ((1.0 / 64.0) * BitboardHelper.GetNumberOfSetBits(
+                BitboardHelper.GetSliderAttacks(PieceType.Bishop, bishop.Square, board)
+            ));
+        }
+
+        private double scoreKnight(Board board, Piece knight)
+        {
+            return 3.0 + ((1.0 / 64.0) * Math.Abs(knight.Square.Index - 31));
+        }
+
+        private double scorePawn(Board board, Piece pawn)
+        {
+            return 1.0;
+        }
+
+        private double EvaluatePosition(Board board)
+        {
+
+            if (board.IsInCheckmate()) return board.IsWhiteToMove ? double.NegativeInfinity : double.PositiveInfinity;
+
+            double score = 0.0;
+            PieceList[] allPieceList = board.GetAllPieceLists();
+            for (int i = 0; i < allPieceList.Length; i++)
+            {
+                PieceList pieceList = allPieceList[i];
+                foreach (Piece piece in pieceList)
                 {
-                    var pieceIndex = (int)piece;
-                    var bitboard = board.GetPieceBitboard(piece, isWhite);
-
-                    while (bitboard != 0)
+                    double pieceScore = 0.0;
+                    switch (pieceList.TypeOfPieceInList)
                     {
-                        var sq = BitOperations.TrailingZeroCount(bitboard);
-                        bitboard &= bitboard - 1;
-
-                        // Material
-                        score += pieceValues[pieceIndex];
-
-                        // Centrality
-                        var rank = sq >> 3;
-                        var file = sq & 7;
-                        var centrality = -Math.Abs(7 - rank - file) - Math.Abs(rank - file);
-                        score += centrality * (6 - pieceIndex);
+                        case PieceType.King:
+                            pieceScore += scoreKing(board, piece);
+                            break;
+                        case PieceType.Queen:
+                            pieceScore += scoreQueen(board, piece);
+                            break;
+                        case PieceType.Rook:
+                            pieceScore += scoreRook(board, piece);
+                            break;
+                        case PieceType.Bishop:
+                            pieceScore += scoreBishop(board, piece);
+                            break;
+                        case PieceType.Knight:
+                            pieceScore += scoreKnight(board, piece);
+                            break;
+                        case PieceType.Pawn:
+                            pieceScore += scorePawn(board, piece);
+                            break;
                     }
+
+                    score += pieceScore * (pieceList.IsWhitePieceList ? 1.0 : -1.0);
                 }
-
-                score = -score;
+                if (pieceList.TypeOfPieceInList == PieceType.King) continue;
             }
-
-            if (!board.IsWhiteToMove)
-            {
-                score = -score;
-            }
-
             return score;
         }
 
-        private int Search(Board board, Timer timer, int totalTime, int ply, int depth, int alpha, int beta, HashSet<ulong> repetitions, out Move bestMove)
+        private double EvaluateMove(Board board, Move move)
         {
-            bestMove = Move.NullMove;
 
-            if (ply > 0 && repetitions.Contains(board.ZobristKey))
+            double finalEval;
+
+            board.MakeMove(move);
+
+            Move[] legalMoves = board.GetLegalMoves();
+
+            if (board.IsInCheckmate()) finalEval = board.IsWhiteToMove ? double.NegativeInfinity : double.PositiveInfinity;
+
+            else if (legalMoves.Length == 0) finalEval = 0;
+
+            else
             {
-                return 0;
+                double[] evals = new double[legalMoves.Length];
+                for (int i = 0; i < legalMoves.Length; i++)
+                {
+                    board.MakeMove(legalMoves[i]);
+                    evals[i] = EvaluatePosition(board) + (legalMoves[i].MovePieceType == PieceType.Pawn ? 1 : 0);
+                    board.UndoMove(legalMoves[i]);
+
+                }
+                finalEval = board.IsWhiteToMove ? evals.Max() : evals.Min();
             }
 
-            if (depth == 0)
-            {
-                var score = Evaluate(board);
-                return score;
-            }
+            board.UndoMove(move);
 
-            var moves = board.GetLegalMoves();
-            moves = moves.OrderBy(move => !move.IsCapture).ToArray();
-            var bestScore = -Inf;
-            var movesEvaluated = 0;
-
-            // Loop over each legal move
-            foreach (var move in moves)
-            {
-                // If we are out of time, stop searching
-                if (depth > 2 && timer.MillisecondsElapsedThisTurn * 30 > totalTime)
-                {
-                    return bestScore;
-                }
-
-                board.MakeMove(move);
-                var score = -Search(board, timer, totalTime, ply + 1, depth - 1, -beta, -alpha, repetitions, out _);
-                board.UndoMove(move);
-
-                // Count the number of moves we have evaluated for detecting mates and stalemates
-                movesEvaluated++;
-
-                // If the move is better than our current best, update our best move
-                if (score > bestScore)
-                {
-                    bestScore = score;
-                    bestMove = move;
-                    if (score > alpha)
-                    {
-                        alpha = score;
-                        if (score >= beta)
-                        {
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (movesEvaluated == 0)
-            {
-                if (board.IsInCheck())
-                {
-                    // Checkmate
-                    return -Mate;
-                }
-                else
-                {
-                    // Stalemate
-                    return 0;
-                }
-            }
-
-            return bestScore;
+            return finalEval;
         }
 
         public Move Think(Board board, Timer timer)
         {
-            var totalTime = timer.MillisecondsRemaining;
 
-            _repetitions.Add(board.ZobristKey);
-            var repetitionsCopy = _repetitions.ToHashSet();
+            // Console.WriteLine(EvaluatePosition(board));
 
-            var bestMove = Move.NullMove;
-            // Iterative deepening
-            for (var depth = 1; depth < 128; depth++)
+            Random rand = new Random();
+            Move[] legalMoves = board.GetLegalMoves();
+
+            double scoreMultipler = board.IsWhiteToMove ? 1.0 : -1.0;
+            double[] evals = new double[legalMoves.Length];
+            for (int i = 0; i < legalMoves.Length; i++)
             {
-                var score = Search(board, timer, totalTime, 0, depth, -Inf, Inf, repetitionsCopy, out var move);
-
-                // If we are out of time, we cannot trust the move that was found during this iteration
-                if (timer.MillisecondsElapsedThisTurn * 30 > totalTime)
-                {
-                    break;
-                }
-
-                bestMove = move;
-                Console.WriteLine($"{score} {move}");
+                evals[i] = scoreMultipler * EvaluateMove(board, legalMoves[i]);
             }
 
-            return bestMove;
+            Array.Sort(evals, legalMoves);
+            return legalMoves[legalMoves.Length - 1];
         }
     }
 }
